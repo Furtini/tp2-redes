@@ -11,5 +11,5 @@ if [ $# -eq 0 ] || ([ "$1" != add ] && [ "$1" != del ]) ; then
 fi
 
 for i in $(seq 1 16) ; do
-    ip addr "$1" "127.0.1.$i/32" dev lo
+    ip addr "$1" "127.0.1.$i/32" dev lo0
 done

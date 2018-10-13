@@ -99,10 +99,12 @@ class Router():
                 
                 # update time stamp for routes to source
                 routes = routerTable[sourceIP]
+                
                 # check for more than 1 route
                 if len(routes) > 1:
                     for index in range(len(routes)):
                         routes[index][2] = time.time()
+                
                 else:
                     routes[0][2] = time.time()
                 
