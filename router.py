@@ -7,6 +7,8 @@ import sys, socket, struct, json, time
 import argparse, threading
 from random import randint
 
+PORT = 55151
+
 # Global tables use by the current router
 # neighbors Table layout:
 # {"ip": distance}
@@ -32,15 +34,13 @@ class Router():
         self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
         self.udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.udp.bind((self.host, self.port))
-
         return self.udp
 
     # Initialize neighbor socket
     def initNeighborSocket(self):
-
+      
         self.udpNeighbor = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
         self.udpNeighbor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
         return self.udpNeighbor
 
     # Handle user input
@@ -49,7 +49,7 @@ class Router():
     #   - "trace ip"    : calculate hops to the ip destination
     #   - Ctrl+c        : terminate the program
     def handleUserInput(self):
-
+      
         while True:
             line = input("")
             self.handleLine(line)
@@ -62,20 +62,41 @@ class Router():
         # line[0] = command
         # line[1] = ip
         # line[2] = weight
-        if line[0] == "add":
+        if line[0] == "q" or line[0] == "Q":
+            exit()
+
+        elif line[0] == "add":
             neighborsTable[line[1]] = line[2]
-            routerTable[line[1]] = [[line[2], line[1], time.time()]]
+            #routerTable[line[1]] = [[line[2], line[1], time.time()]]
 
         elif line[0] == "del":
             neighborsTable.pop(line[1], None)
-            routerTable.pop(line[1], None)
+            #routerTable.pop(line[1], None)
 
         elif line[0] == "trace":
-            
             self.sendTrace(line[1])
 
         else:
-            print("Unknow command!")
+            print("Unknow command. Try again.")
+
+    # Create JSON message to send
+    def createMessage(self, messageType, destination, data):
+
+        message = {}
+        message["type"] = messageType
+        message["source"] = self.host
+        message["destination"] = destination
+
+        if messageType == "trace":
+            message["hops"] = data
+        elif messageType == "update":
+            message["distances"] = data
+        elif messageType == "data":
+            message["payload"] = data
+
+        message = json.dumps(message)
+
+        return message
 
     # Receive messagens
     #  - update messages: update router table
@@ -97,14 +118,7 @@ class Router():
             # Update Message
             if messageType == "update":
                 
-                # update time stamp for routes to source
-                routes = routerTable[sourceIP]
-                # check for more than 1 route
-                if len(routes) > 1:
-                    for index in range(len(routes)):
-                        routes[index][2] = time.time()
-                else:
-                    routes[0][2] = time.time()
+                # Update time stamps
                 
                 # Save the distances received from update from neighbor              
                 new_distances = data["distances"]
@@ -249,8 +263,13 @@ class Router():
         # Setting up distances table to send in the update messages
         # Format: {ip: distance}
         distanceTable = {}
-        for ip in list(routerTable):
-            distanceTable[ip] = routerTable[ip][0][0]
+        if len(routerTable) == 0:
+            for ip in neighborsTable:
+                distanceTable[ip] = neighborsTable[ip]
+        else:
+            for ip in list(routerTable):
+                distanceTable[ip] = routerTable[ip][0][0]
+            
 
         while True:
             # Sleep thread until "period", send update after
@@ -268,14 +287,10 @@ class Router():
                     # Beggin socket connection to send trace to next hop
                     neighbor = self.initNeighborSocket()
 
-                    # Message
-                    updateMessage = {} 
-                    updateMessage["type"] = "update"
-                    updateMessage["source"] = self.host
-                    updateMessage["destination"] = ip
-                    updateMessage["distances"] = distanceTable
+                    # Create Message
+                    updateMessage = self.createMessage("update", ip, distanceTable) 
+                    
                     # Send menssage
-                    updateMessage = json.dumps(updateMessage)
                     neighbor.sendto(updateMessage.encode('UTF-8'), (ip, 55151))
                     
                     # Re add revomed route to router table
@@ -286,14 +301,10 @@ class Router():
                     # Beggin socket connection to send trace to next hop
                     neighbor = self.initNeighborSocket()
 
-                    # Message
-                    updateMessage = {}
-                    updateMessage["type"] = "update"
-                    updateMessage["source"] = self.host
-                    updateMessage["destination"] = ip
-                    updateMessage["distances"] = distanceTable
+                    # Create message
+                    updateMessage = self.createMessage("update", ip, distanceTable)
+
                     # send message
-                    updateMessage = json.dumps(updateMessage)
                     neighbor.sendto(updateMessage.encode('UTF-8'), (ip, 55151))
 
     # Send trace message to destination
@@ -312,35 +323,27 @@ class Router():
             # Beggin socket connection to send trace to next hop
             neighbor = self.initNeighborSocket()
 
-            # Message
-            traceMessage = {}
-            traceMessage["type"] = "trace"
-            traceMessage["source"] = self.host
-            traceMessage["destination"] = dest
-            traceMessage["hops"] = []
-            traceMessage["hops"].append(self.host)
+            
+            # Create message
+            hops = [self.host]
+            traceMessage = self.createMessage("trace", dest, hops)
+            
             # Send message            
-            data = json.dumps(traceMessage)
-            neighbor.sendto(data.encode('UTF-8'), (routerToSendIP, 55151))
+            neighbor.sendto(traceMessage.encode('UTF-8'), (routerToSendIP, 55151))
 
         # Ip is not on router table
         else:
             # Beggin socket connection to send trace to next hop
             neighbor = self.initNeighborSocket()
 
-            # Message
-            traceMessage = {}
-            traceMessage["type"] = "trace"
-            traceMessage["source"] = self.host
-            traceMessage["destination"] = dest
-            traceMessage["hops"] = []
-            traceMessage["hops"].append(self.host)
-
-            # Send message
-            data = json.dumps(traceMessage)
+            # Create message
+            hops = [self.host]
+            traceMessage = self.createMessage("trace", dest, hops)
+            
             # Get next hop
             nextHop = routerTable[dest][0][1]
-            neighbor.sendto(data.encode('UTF-8'), (nextHop, 55151))
+            # Send message
+            neighbor.sendto(traceMessage.encode('UTF-8'), (nextHop, 55151))
 
     # Send data message back to the destination required
     def sendData(self, hops, dest, nextHop):
@@ -358,46 +361,37 @@ class Router():
             # Beggin socket connection to send trace to next hop
             neighbor = self.initNeighborSocket()
 
-            # Message
-            dataMessage = {}
-            dataMessage["type"] = "data"
-            dataMessage["source"] = self.host
-            dataMessage["destination"] = dest
-            dataMessage["payload"] = hops
-
+            # Create message
+            dataMessage = self.createMessage("data", dest, hops)
+            
             # Send message
-            data = json.dumps(dataMessage)
             # Check if router is neighbor
             if nextHop == "":  # is neighbor
-                neighbor.sendto(data.encode('UTF-8'), (dest, 55151))
+                neighbor.sendto(dataMessage.encode('UTF-8'), (dest, 55151))
             else:
-                neighbor.sendto(data.encode('UTF-8'), (routerToSendIP, 55151))
+                neighbor.sendto(dataMessage.encode('UTF-8'), (routerToSendIP, 55151))
 
         # If only one route, send to id
         else:
             # Beggin socket connection to send trace to next hop
             neighbor = self.initNeighborSocket()
             
-            # Message
-            dataMessage = {}
-            dataMessage["type"] = "data"
-            dataMessage["source"] = self.host
-            dataMessage["destination"] = dest
-            dataMessage["payload"] = hops
-
+            # Create message
+            dataMessage = self.createMessage("data", dest, hops)
+            
             # Send message
-            data = json.dumps(dataMessage)
             # Check if router is neighbor 
             if nextHop == "": # is neighbor
-                neighbor.sendto(data.encode('UTF-8'), (dest, 55151))
+                neighbor.sendto(dataMessage.encode('UTF-8'), (dest, 55151))
             else:
-                neighbor.sendto(data.encode('UTF-8'), (nextHop, 55151))
+                neighbor.sendto(dataMessage.encode('UTF-8'), (nextHop, 55151))
 
     # Delete routes after 4 pi times passed
     def deleteRoutes(self, period):
 
         # Keep cheking the router list looking for routers that passed 4 * period without atualization
         # If the time withou update pass 4*pi remove route from table.
+       """
         while True:
 
             timeToLive = (period * 4)
@@ -421,7 +415,7 @@ class Router():
                         routerTable.pop(ip, None)
                     else:
                         continue            
-
+        """
     # Calculate the load balance for a given list of routes and distances
     # Input: list of routes to a given IP
     # Input Model: [[weight, nextHop, timeStamo], [weight, nextHop, timeStamo], ...]
@@ -453,9 +447,8 @@ class Router():
             for line in fp:
                 self.handleLine(line)
 
-# Main execution
-if __name__ == '__main__':
-
+def defineParameters():
+    
     # Control for requiered and optional paramethers
     parser = argparse.ArgumentParser()
     # Requiered
@@ -466,8 +459,13 @@ if __name__ == '__main__':
     parser.add_argument("--update-period")
     parser.add_argument("--startup-commands")
 
-    args = parser.parse_args()
- 
+    return parser.parse_args()
+
+# Main execution
+if __name__ == '__main__':
+
+    args = defineParameters()
+
     host = args.hostIP
     period = args.timePeriod
 
@@ -478,7 +476,7 @@ if __name__ == '__main__':
     if args.update_period:
         period = args.timePeriod
 
-    router = Router(host, 55151, period)
+    router = Router(host, PORT, period)
     
     # Optional startup commands parameter
     if args.startup_commands:
@@ -486,14 +484,21 @@ if __name__ == '__main__':
 
     router.initSocket()
 
-    # Initialize thread to receive messages
-    threading.Thread(target = router.receive, args = ()).start()
-   
-    # initialize thread to handle user input
-    threading.Thread(target = router.handleUserInput, args = ()).start()
-   
-    # Initialize thread for sending update messages
-    threading.Thread(target = router.sendUpdate, args = (period,)).start()
+    # Initialize Threads
+    inputThread   = threading.Thread(target = router.handleUserInput, args = ())
+    
+    updateThread  = threading.Thread(target = router.sendUpdate, args = (period,))
+    updateThread.daemon = True
+    receiveThread = threading.Thread(target = router.receive, args = ())
+    receiveThread.daemon = True
+    deleteThread  = threading.Thread(target = router.deleteRoutes, args = (period,))
+    deleteThread.daemon = True
 
-    # initialize thread for checking and deleting old routes
-    threading.Thread(target = router.deleteRoutes, args = (period,)).start()
+    try:
+        inputThread.start()
+        updateThread.start()
+        receiveThread.start()
+        deleteThread.start()
+
+    except KeyboardInterrupt:
+        updateThread.join()
