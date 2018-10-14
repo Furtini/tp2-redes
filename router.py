@@ -99,12 +99,10 @@ class Router():
                 
                 # update time stamp for routes to source
                 routes = routerTable[sourceIP]
-                
                 # check for more than 1 route
                 if len(routes) > 1:
                     for index in range(len(routes)):
                         routes[index][2] = time.time()
-                
                 else:
                     routes[0][2] = time.time()
                 
@@ -181,8 +179,7 @@ class Router():
                     nextHop = routerTable[sourceIP][0][1]
                     
                     # Send   hops list from trace message.
-                    self.sendData(
-                        data["hops"], sourceIP, nextHop)
+                    self.sendData(data["hops"], sourceIP, nextHop)
                 
                 # If its not destination, send to next known address
                 else:
