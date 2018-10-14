@@ -19,27 +19,20 @@ tabelaRoteador = {}
 
 lock = threading.Lock()
 
-def tratarLinha(linhaComando):
+# Inicializa, da bind e retorna um socket UDP
+def inicializarSocket(host, port):
 
-    linha = linhaComando.spli()
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
+    udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    udp.bind((host, port))
+    return udp
 
-    if linha[0] == "add":
-        print("add")
-        tabelaVizinhos[linha[1]] = linha[2]
-        print(tabelaVizinhos)
+# Inicializar e retorna um socket UDP
+def inicializarSockVizinho():
 
-    elif linha[0] == "del":
-        print("del")
-        tabelaVizinhos.pop(linha[1], None)
-        print(tabelaVizinhos)
-
-    elif linha[0] == "trace":
-        print("trace")
-        print(tabelaVizinhos)
-    
-    else:
-        print("Comando desconhecido")
-
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
+    udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    return udp
 
 def lerArquivo(arquivoComandos):
 
@@ -63,6 +56,56 @@ def definirParametros():
 
     return parser.parse_args()
 
+# Verifica qual o tipo de comando e executa o comando apropriado
+def tratarLinha(linhaComando):
+
+    comandos = linhaComando.split()
+
+    # Finalizar execucao
+    if comandos[0] == "q" or comandos[0] == "quit":
+        exit()
+
+    elif comandos[0] == "add":
+        print("add")
+        tabelaVizinhos[comandos[1]] = comandos[2]
+        print(tabelaVizinhos)
+        return "add"
+
+    elif comandos[0] == "del":
+        print("del")
+        tabelaVizinhos.pop(comandos[1], None)
+        print(tabelaVizinhos)
+        return "del"
+
+    elif comandos[0] == "trace":
+        print("trace")
+        return "trace"
+    
+    else:
+        print("Comando desconhecido")
+        return "desconhecido"
+
+# Funcoes executadas nas threads
+# Lida com os inputs do Usuario durante execucao
+def lidarComandoUsuario():
+    
+    while True:
+        comando = input("")
+        tratarLinha(comando)
+
+# Enviar mensagens de Update periodicamente
+def enviarUpdate(periodo):
+
+    while True:
+
+        time.sleep(periodo)
+        print("Mensagem de update")
+
+        for ip in tabelaVizinhos:
+            
+            # Split Horizon
+            print("Vizinho: {}".format(tabelaVizinhos[ip]))
+
 # Execucao principal
 if __name__ == '__main__':
 
@@ -77,4 +120,19 @@ if __name__ == '__main__':
     if args.update_period:
         periodo = args.timePeriod
     if args.startup_commands:
-        arquivoComandos = args.startup_commands
+        lerArquivo(args.startup_commands)
+
+    # Inicializando Threads
+    inputThread = threading.Thread(target=lidarComandoUsuario, args=())
+    updateThread = threading.Thread(target=enviarUpdate, args=(periodo, ))    
+        
+    try:
+        # Thread principal
+        inputThread.start()
+
+        updateThread.daemon = True
+        updateThread.start()
+    
+    except KeyboardInterrupt:
+        inputThread.join()
+        updateThread.join()
