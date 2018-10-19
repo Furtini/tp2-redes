@@ -111,6 +111,8 @@ class Router():
     #       case false - add ip to hops list, send message to shortest path to destination
     def receive(self):
 
+        global period
+
         while True:
             
             data, conn = self.udp.recvfrom(10000)
@@ -141,7 +143,7 @@ class Router():
                     if ip not in routerTable:
                         
                         # Add ip to the route
-                        routerTable[ip] = [[newWeight, sourceIP, time.time()]]
+                        routerTable[ip] = [[newWeight, sourceIP, (4 * period)]]
                     
                     # New ip already in router table
                     # Check if new weight is lower then new one
@@ -163,7 +165,7 @@ class Router():
                             for i in range(numberOfKnownRoutes):
                                 routerTable[ip][i][0] = newWeight
                                 routerTable[ip][i][1] = sourceIP
-                                routerTable[ip][i][2] = time.time()
+                                routerTable[ip][i][2] = 4 * period
 
                         # We need to save the routes with the same weight and nexHop to the IP
                         # Same weight, add route to list
@@ -176,7 +178,7 @@ class Router():
                                     break
                             # if the next hopis not on the list, add new route to the same ip.
                             else:
-                                routerTable[ip].append([newWeight,sourceIP, time.time()])
+                                routerTable[ip].append([newWeight,sourceIP, (4 * period)])
                         
                         # If new weight is bigger then current one
                         else:
@@ -187,15 +189,15 @@ class Router():
                             if nextHop == sourceIP:
                                 for i in range(numberOfKnownRoutes):
                                     routerTable[ip][i][0] = newWeight
-                                    routerTable[ip][i][2] = time.time()
+                                    routerTable[ip][i][2] = 4 * period
                     
             # Trace Message
             if messageType == "trace":
 
+                data["hops"].append(self.host)
+
                 # Check if is destination, case true: send data message to source with hops list
                 if destinationIP == self.host:
-
-                    data["hops"].append(self.host)
 
                     self.sendData(data["hops"], sourceIP)
 
@@ -204,10 +206,7 @@ class Router():
 
                     nextIP = self.initNeighborSocket()
                     
-                    # Append IP to Hops list
-                    data["hops"].append(self.host)
-                    
-                    if destinationIP in neighborsTable or destinationIP == self.host:
+                    if destinationIP in neighborsTable:
                         nextHop = destinationIP
                     
                     else:
@@ -239,28 +238,24 @@ class Router():
                     # Beggin socket connection to send trace to next hop
                     nextIP = self.initNeighborSocket()
 
-                    if destinationIP in neighborsTable:
-                        nextHop = destinationIP
+                    # Check if next hop has more then one route
+                    if len(routerTable[destinationIP]) > 1:
 
-                    else:                    
-                        # Check if next hop has more then one route
-                        if len(routerTable[destinationIP]) > 1:
+                        # Get next hop through load balance algorith
+                        nextHop = self.loadBalance(routerTable[destinationIP])
 
-                            # Get next hop through load balance algorith
-                            nextHop = self.loadBalance(routerTable[destinationIP])
+                        # Send message
+                        data = json.dumps(data)
+                        nextIP.sendto(data.encode('UTF-8'), (nextHop, PORT))
 
-                            # Send message
-                            data = json.dumps(data)
-                            nextIP.sendto(data.encode('UTF-8'), (nextHop, PORT))
-
-                        # If only one route to destination
-                        else:
-                            # Get next hop
-                            nextHop = routerTable[destinationIP][0][1]
-                            
-                            # Send message
-                            data = json.dumps(data)
-                            nextIP.sendto(data.encode('UTF-8'), (nextHop, PORT))
+                    # If only one route to destination
+                    else:
+                        # Get next hop
+                        nextHop = routerTable[destinationIP][0][1]
+                        
+                        # Send message
+                        data = json.dumps(data)
+                        nextIP.sendto(data.encode('UTF-8'), (nextHop, PORT))
 
     # Send periodic update messagens
     #   - Time period read from input parameter
@@ -274,7 +269,7 @@ class Router():
         if len(routerTable) == 0:
             for ip in neighborsTable:
                 # Build router table 
-                routerTable[ip] = [[neighborsTable[ip], ip, time.time()]]
+                routerTable[ip] = [[neighborsTable[ip], ip, (4 * period)]]
                 
                 distanceTable[ip] = neighborsTable[ip]
         else:
@@ -342,7 +337,7 @@ class Router():
 
     # Send data message back to the destination required
     def sendData(self, hops, dest):
-       
+
         neighbor = self.initNeighborSocket()
 
         if dest in neighborsTable:
@@ -362,7 +357,6 @@ class Router():
             else:
                 nextHop = routerTable[dest][0][1]
             
-
         dataMessage = self.createMessage("data", dest, hops)
         neighbor.sendto(dataMessage.encode('UTF-8'), (nextHop, PORT))
 
@@ -442,6 +436,8 @@ def defineParameters():
 
 # Main execution
 if __name__ == '__main__':
+
+    global period
 
     args = defineParameters()
 
