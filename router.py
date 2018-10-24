@@ -64,8 +64,8 @@ class Router():
         if line[0] == "q" or line[0] == "Q":
             exit()
 
-        elif line[0] == "add":
-            neighborsTable[line[1]] = line[2]
+        elif line[0] == "add": self.handleAdd(line[1], line[2])
+            # neighborsTable[line[1]] = line[2]
             #routerTable[line[1]] = [[line[2], line[1], time.time()]]
 
         elif line[0] == "del":
@@ -83,6 +83,17 @@ class Router():
 
         else:
             print("Unknow command. Try again.")
+
+    # handle add command
+    def handleAdd(self, ip, distance):
+        
+        global period
+
+        if ip not in neighborsTable:
+            neighborsTable[ip] = distance
+
+        if ip not in routerTable:
+            routerTable[ip] = [[distance, ip, (4 *  period)]]
 
     # Create JSON message to send
     def createMessage(self, messageType, destination, data):
@@ -133,19 +144,22 @@ class Router():
 
         # Save the distances received from update from neighbor              
         sourceIP = data["source"]
+        
         newDistances = data["distances"]
 
         print("novas distancias: {}".format(newDistances))
         #if sourceIP not in neighborsTable:
-            
+        
         # Weight to the neighbor where the message came from
-        weightToNeighbor = int(neighborsTable[sourceIP])
+        # weightToNeighbor = int(neighborsTable[sourceIP])
 
         # Loop through list of distances received                
         # Checking if each IP are on the router table
         for ip, dist in newDistances.items():
             
-            newWeight = int(dist[0]) + weightToNeighbor
+            if dist == "0": continue
+            
+            newWeight = dist
 
             # If IP read is not on the router table, add it with current time stamp
             if ip not in routerTable:
@@ -275,9 +289,9 @@ class Router():
     #   - Send update message to all neighbors (Split Horizon optimization)
     def sendUpdate(self, period):
         
-        # Setting up distances table to send in the update messages
-        # Format: {ip: distance}
-        distanceTable = self.buildDistanceTable()
+        # No known neighbors
+        if not neighborsTable:
+            return
 
         while True:
             # Sleep thread until "period", send update after
@@ -286,45 +300,18 @@ class Router():
             # Loop through all neighbors
             for ip in neighborsTable:
 
-                neighbor = self.initNeighborSocket()
-                
                 # Split Horizon
                 # Remove the route that goes to the neighbor of the message to the neighbor
-                if ip in list(routerTable):
-                    # Remove the knowing route to neighbor
-                    removedRoute = distanceTable.pop(ip)
-
-                    updateMessage = self.createMessage("update", ip, distanceTable) 
-                    neighbor.sendto(updateMessage.encode('UTF-8'), (ip, PORT))
-                    
-                    # Re add revomed route to router table
-                    distanceTable[ip] = removedRoute
-
-                # Ip is not on router table
-                else:
-                    updateMessage = self.createMessage("update", ip, distanceTable)
-                    neighbor.sendto(updateMessage.encode('UTF-8'), (ip, PORT))
-
-    # Build disntance table to send across the network
-    def buildDistanceTable(self):
-
-        global period
-
-        distanceTable = {}
-
-        if len(routerTable) == 0:
-            for ip in neighborsTable:
-                # Build router table 
-                # routerTable[ip] = [[neighborsTable[ip], ip, (4 * period)]]
+                distanceTable = self.buildDistanceTable()
                 
-                distanceTable[ip] = neighborsTable[ip]
-        else:
-            for ip in list(routerTable):
-                distanceTable[ip] = routerTable[ip][0][0]
+                print("Distancias: {}".format(distanceTable))
+                
+                neighbor = self.initNeighborSocket()
 
-        print("Distancias: {}".format(distanceTable))
-        return distanceTable
-
+                updateMessage = self.createMessage("update", ip, distanceTable) 
+                
+                neighbor.sendto(updateMessage.encode('UTF-8'), (ip, PORT))
+                
     # Send trace message to destination
     def sendTrace(self, dest):
 
@@ -407,7 +394,21 @@ class Router():
                     else:
                         continue            
         """
-   
+
+    # Build disntance table to send across the network
+    def buildDistanceTable(self):
+
+        distanceTable = {}
+
+        if routerTable:
+            for ip, routes in routerTable.items():
+                print("Rotas: {}".format(routes))
+                distanceTable[ip] = routes[0][0]
+
+        distanceTable[self.host] = "0"
+
+        return distanceTable
+
     # Calculate the load balance for a given list of routes and distances
     # Input: list of routes to a given IP
     # Input Model: [[weight, nextHop, timeStamo], [weight, nextHop, timeStamo], ...]
