@@ -9,6 +9,9 @@ from random import randint
 
 PORT = 55151
 
+# Time to leave
+ttl = 0
+
 # Global tables use by the current router
 # neighbors Table layout:
 # {"ip": distance}
@@ -60,17 +63,14 @@ class Router():
 
         # line[0] = command
         # line[1] = ip
-        # line[2] = weight
+        # line[2] = distance
         if line[0] == "q" or line[0] == "Q":
             exit()
 
         elif line[0] == "add": self.handleAdd(line[1], line[2])
-            # neighborsTable[line[1]] = line[2]
-            #routerTable[line[1]] = [[line[2], line[1], time.time()]]
 
         elif line[0] == "del":
             neighborsTable.pop(line[1], None)
-            #routerTable.pop(line[1], None)
 
         elif line[0] == "trace":
             self.sendTrace(line[1])
@@ -88,6 +88,9 @@ class Router():
     def handleAdd(self, ip, distance):
         
         global period
+
+        if ip == self.host:
+            return
 
         if ip not in neighborsTable:
             neighborsTable[ip] = distance
@@ -147,72 +150,24 @@ class Router():
         
         newDistances = data["distances"]
 
-        print("novas distancias: {}".format(newDistances))
-        #if sourceIP not in neighborsTable:
-        
-        # Weight to the neighbor where the message came from
-        # weightToNeighbor = int(neighborsTable[sourceIP])
+        if sourceIP in neighborsTable: 
+            neighborDist = neighborsTable[sourceIP] 
 
         # Loop through list of distances received                
         # Checking if each IP are on the router table
         for ip, dist in newDistances.items():
-            
-            if dist == "0": continue
-            
-            newWeight = dist
 
-            # If IP read is not on the router table, add it with current time stamp
             if ip not in routerTable:
-                
+                newDist = int(dist) + int(neighborDist)
                 # Add ip to the route
-                routerTable[ip] = [[newWeight, sourceIP, (4 * period)]]
+                routerTable[ip] = [[str(newDist), sourceIP, ttl]]
             
-            # New ip already in router table
-            # Check if new weight is lower then new one
             else:
-                # Since we can have multiple routes with the same weight to the same destination
-                # We need to check all of then
-                
-                # All routes known of the ip received
-                numberOfKnownRoutes = len(routerTable[ip])
-                
-                # Oold weight save in the router table
-                oldWeight = int(routerTable[ip][0][0])
+                routes = routerTable[ip]
 
-                # New weight is lower then current weight
-                # Replace with new weight
-                if newWeight < oldWeight:
+                oldDistance = routes[0][0]
 
-                    # Loop through all known routes to to the ip to update values
-                    for i in range(numberOfKnownRoutes):
-                        routerTable[ip][i][0] = newWeight
-                        routerTable[ip][i][1] = sourceIP
-                        routerTable[ip][i][2] = 4 * period
 
-                # We need to save the routes with the same weight and nexHop to the IP
-                # Same weight, add route to list
-                elif newWeight == oldWeight:
-                    
-                    # Check if nextHop already on list
-                    for sublist in routerTable[ip]:
-                        # If next hop is already on the list, do nothing                                
-                        if sublist[1] == sourceIP:
-                            break
-                    # if the next hopis not on the list, add new route to the same ip.
-                    else:
-                        routerTable[ip].append([newWeight,sourceIP, (4 * period)])
-                
-                # If new weight is bigger then current one
-                else:
-
-                    nextHop = routerTable[ip][0][1]
-
-                    # Check if next hop is current neighbord, update weight
-                    if nextHop == sourceIP:
-                        for i in range(numberOfKnownRoutes):
-                            routerTable[ip][i][0] = newWeight
-                            routerTable[ip][i][2] = 4 * period
-                                    
     # Deal with received trace     
     def receivedTrace(self, data):
 
@@ -289,22 +244,21 @@ class Router():
     #   - Send update message to all neighbors (Split Horizon optimization)
     def sendUpdate(self, period):
         
-        # No known neighbors
-        if not neighborsTable:
-            return
-
         while True:
             # Sleep thread until "period", send update after
             time.sleep(period)
-           
+         
+            # No neighbors
+            if not neighborsTable:
+                continue
+            
             # Loop through all neighbors
             for ip in neighborsTable:
 
+                distanceTable = self.buildDistanceTable(ip)
+               
                 # Split Horizon
                 # Remove the route that goes to the neighbor of the message to the neighbor
-                distanceTable = self.buildDistanceTable()
-                
-                print("Distancias: {}".format(distanceTable))
                 
                 neighbor = self.initNeighborSocket()
 
@@ -369,41 +323,35 @@ class Router():
 
         # Keep cheking the router list looking for routers that passed 4 * period without atualization
         # If the time withou update pass 4*pi remove route from table.
-       """
         while True:
 
-            timeToLive = (period * 4)
-            currentTime = time.time()
+            time.sleep(period)
 
+            lock.acquire()
             # Loop through router list
-            for ip in list(routerTable):
-                #list of all routes known by current ip
-                routes = routerTable[ip]
-
+            for ip, routes in routerTable.items():
+                
                 # check for more than 1 route
                 if len(routes) > 1:
                     for index in range(len(routes)):
-                        if (currentTime - routes[index][2]) >= timeToLive:
-                            routerTable[ip].remove[index]
-                        else:
-                            continue
-
+                        routes[index][2] -= 1
+                        
+                        if routes[index][2] <= 0 : routes.pop(index)
                 else:
-                    if (currentTime - routes[0][2]) >= timeToLive:
-                        routerTable.pop(ip, None)
-                    else:
-                        continue            
-        """
+                    routes[0][2] -= 1      
+                    if routes[0][2] <= 0 : routerTable.pop(ip)
+
+            lock.release()
 
     # Build disntance table to send across the network
-    def buildDistanceTable(self):
+    def buildDistanceTable(self, destination):
 
         distanceTable = {}
 
         if routerTable:
             for ip, routes in routerTable.items():
-                print("Rotas: {}".format(routes))
-                distanceTable[ip] = routes[0][0]
+                if ip != destination:
+                    distanceTable[ip] = routes[0][0]
 
         distanceTable[self.host] = "0"
 
@@ -411,7 +359,7 @@ class Router():
 
     # Calculate the load balance for a given list of routes and distances
     # Input: list of routes to a given IP
-    # Input Model: [[weight, nextHop, timeStamo], [weight, nextHop, timeStamo], ...]
+    # Input Model: [[distance, nextHop, timeStamo], [distance, nextHop, timeStamo], ...]
     # Output: an address to send the next message
     def loadBalance(self, destRoutes):
         
@@ -466,6 +414,8 @@ if __name__ == '__main__':
 
     router = Router(host, PORT, period)
     
+    ttl = 4 * period
+
     # Optional startup commands parameter
     if args.startup_commands:
         router.readFile(args.startup_commands) 
