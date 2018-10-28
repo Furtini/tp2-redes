@@ -25,13 +25,11 @@ lock = threading.Lock()
 
 class Router():
 
-    # Constructor
     def __init__(self, host, port, period):
         self.host = host
         self.port = port
         self.period = period
 
-    # Initialize UDP socket 
     def initSocket(self):
         
         self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
@@ -39,18 +37,12 @@ class Router():
         self.udp.bind((self.host, self.port))
         return self.udp
 
-    # Initialize neighbor socket
     def initNeighborSocket(self):
       
         self.udpNeighbor = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
         self.udpNeighbor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return self.udpNeighbor
 
-    # Handle user input
-    #   - "add ip cost" : add new router to topology
-    #   - "del ip"      : remove ip from topology
-    #   - "trace ip"    : calculate hops to the ip destination
-    #   - Ctrl+c        : terminate the program
     def handleUserInput(self):
         while True:
             line = input("")
@@ -67,7 +59,7 @@ class Router():
         if line[0] == "q" or line[0] == "Q":
             exit()
 
-        elif line[0] == "add": self.handleAdd(line[1], line[2])
+        elif line[0] == "add": self.handleAddCommand(line[1], line[2])
 
         elif line[0] == "del":
             neighborsTable.pop(line[1], None)
@@ -84,8 +76,7 @@ class Router():
         else:
             print("Unknow command. Try again.")
 
-    # handle add command
-    def handleAdd(self, ip, distance):
+    def handleAddCommand(self, ip, distance):
         
         global period
 
@@ -117,11 +108,6 @@ class Router():
 
         return message
 
-    # Receive messagens
-    #  - update messages: update router table
-    #  - trace messages: check if is destination:
-    #       case true - send back data message
-    #       case false - add ip to hops list, send message to shortest path to destination
     def receive(self):
 
         while True:
@@ -133,6 +119,8 @@ class Router():
             
             messageType = data["type"]
 
+            lock.acquire()
+
             # Update Message
             if messageType == "update": self.receivedUpdate(data)
                 
@@ -141,8 +129,9 @@ class Router():
                 
             # Data Message
             if messageType == "data": self.receiveData(data)
+            
+            lock.release()
 
-    # Deal with received update
     def receivedUpdate(self, data):
 
         # Save the distances received from update from neighbor              
@@ -150,25 +139,15 @@ class Router():
         
         newDistances = data["distances"]
 
-        if sourceIP in neighborsTable: 
-            neighborDist = neighborsTable[sourceIP] 
+        if sourceIP not in neighborsTable: 
+            return
 
         # Loop through list of distances received                
         # Checking if each IP are on the router table
         for ip, dist in newDistances.items():
+            print("IP: {}".format(ip))
+            print("ROTAS: {}".format(dist))
 
-            if ip not in routerTable:
-                newDist = int(dist) + int(neighborDist)
-                # Add ip to the route
-                routerTable[ip] = [[str(newDist), sourceIP, ttl]]
-            
-            else:
-                routes = routerTable[ip]
-
-                oldDistance = routes[0][0]
-
-
-    # Deal with received trace     
     def receivedTrace(self, data):
 
         data["hops"].append(self.host)
@@ -204,7 +183,6 @@ class Router():
             data = json.dumps(data)
             nextIP.sendto(data.encode('UTF-8'), (nextHop, PORT))
 
-    # Deal with received data message
     def receiveData(self, data):
 
         destinationIP = data["destination"]
@@ -239,9 +217,6 @@ class Router():
                 data = json.dumps(data)
                 nextIP.sendto(data.encode('UTF-8'), (nextHop, PORT))
 
-    # Send periodic update messagens
-    #   - Time period read from input parameter
-    #   - Send update message to all neighbors (Split Horizon optimization)
     def sendUpdate(self, period):
         
         while True:
@@ -266,7 +241,6 @@ class Router():
                 
                 neighbor.sendto(updateMessage.encode('UTF-8'), (ip, PORT))
                 
-    # Send trace message to destination
     def sendTrace(self, dest):
 
         neighbor = self.initNeighborSocket()
@@ -293,7 +267,6 @@ class Router():
         traceMessage = self.createMessage("trace", dest, hops)
         neighbor.sendto(traceMessage.encode('UTF-8'), (nextHop, PORT))
 
-    # Send data message back to the destination required
     def sendData(self, hops, dest):
 
         neighbor = self.initNeighborSocket()
@@ -318,7 +291,6 @@ class Router():
         dataMessage = self.createMessage("data", dest, hops)
         neighbor.sendto(dataMessage.encode('UTF-8'), (nextHop, PORT))
 
-    # Delete routes after 4 pi times passed
     def deleteRoutes(self, period):
 
         # Keep cheking the router list looking for routers that passed 4 * period without atualization
@@ -351,16 +323,12 @@ class Router():
         if routerTable:
             for ip, routes in routerTable.items():
                 if ip != destination:
-                    distanceTable[ip] = routes[0][0]
+                    distanceTable[ip] = routes
 
         distanceTable[self.host] = "0"
 
         return distanceTable
 
-    # Calculate the load balance for a given list of routes and distances
-    # Input: list of routes to a given IP
-    # Input Model: [[distance, nextHop, timeStamo], [distance, nextHop, timeStamo], ...]
-    # Output: an address to send the next message
     def loadBalance(self, destRoutes):
         
         # Get the number of repeated routes for the smaller route
@@ -374,8 +342,6 @@ class Router():
 
         return routerToSendIP
 
-    # Read input commands from file passed as parameter
-    # Call handleCommand to break the lines and do the respective action
     def readFile(self, inputFile):
         with open(inputFile) as fp:
             for line in fp:
@@ -429,14 +395,14 @@ if __name__ == '__main__':
     updateThread.daemon = True
     receiveThread = threading.Thread(target = router.receive, args = ())
     receiveThread.daemon = True
-    deleteThread  = threading.Thread(target = router.deleteRoutes, args = (period,))
-    deleteThread.daemon = True
+    #deleteThread  = threading.Thread(target = router.deleteRoutes, args = (period,))
+    #deleteThread.daemon = True
 
     try:
         inputThread.start()
         updateThread.start()
         receiveThread.start()
-        deleteThread.start()
+        #deleteThread.start()
 
     except KeyboardInterrupt:
         updateThread.join()
