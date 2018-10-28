@@ -78,8 +78,6 @@ class Router():
 
     def handleAddCommand(self, ip, distance):
         
-        global period
-
         if ip == self.host:
             return
 
@@ -87,7 +85,7 @@ class Router():
             neighborsTable[ip] = distance
 
         if ip not in routerTable:
-            routerTable[ip] = [[distance, ip, (4 *  period)]]
+            routerTable[ip] = [[distance, ip, (4 *  self.period)]]
 
     # Create JSON message to send
     def createMessage(self, messageType, destination, data):
@@ -217,11 +215,11 @@ class Router():
                 data = json.dumps(data)
                 nextIP.sendto(data.encode('UTF-8'), (nextHop, PORT))
 
-    def sendUpdate(self, period):
+    def sendUpdate(self):
         
         while True:
             # Sleep thread until "period", send update after
-            time.sleep(period)
+            time.sleep(self.period)
          
             # No neighbors
             if not neighborsTable:
@@ -291,13 +289,13 @@ class Router():
         dataMessage = self.createMessage("data", dest, hops)
         neighbor.sendto(dataMessage.encode('UTF-8'), (nextHop, PORT))
 
-    def deleteRoutes(self, period):
+    def deleteRoutes(self):
 
         # Keep cheking the router list looking for routers that passed 4 * period without atualization
         # If the time withou update pass 4*pi remove route from table.
         while True:
 
-            time.sleep(period)
+            time.sleep(self.period)
 
             lock.acquire()
             # Loop through router list
@@ -364,8 +362,6 @@ def defineParameters():
 # Main execution
 if __name__ == '__main__':
 
-    global period
-
     args = defineParameters()
 
     host = args.hostIP
@@ -391,7 +387,7 @@ if __name__ == '__main__':
     # Initialize Threads
     inputThread   = threading.Thread(target = router.handleUserInput, args = ())
     
-    updateThread  = threading.Thread(target = router.sendUpdate, args = (period,))
+    updateThread  = threading.Thread(target = router.sendUpdate, args = ())
     updateThread.daemon = True
     receiveThread = threading.Thread(target = router.receive, args = ())
     receiveThread.daemon = True
