@@ -73,8 +73,12 @@ class Router():
             print("---------")
             print("ROTEADOR: {}".format(routerTable))
 
+        elif line[0] == "f":
+            self.sendUpdate()
+
         else:
             print("Unknow command. Try again.")
+            return
 
     def handleAddCommand(self, ip, distance):
         
@@ -136,15 +140,45 @@ class Router():
         sourceIP = data["source"]
         
         newDistances = data["distances"]
-
+       
+        print()
+        print("--- UPDATE RECEBIDO ---")
+        print()
+        print(newDistances)
+       
         if sourceIP not in neighborsTable: 
             return
-
+        
+        nextHop = sourceIP
+        neighborDistance = neighborsTable[sourceIP]
+        #print("DIST Vizinho: {}".format(neighborDistance))
+        
         # Loop through list of distances received                
         # Checking if each IP are on the router table
         for ip, dist in newDistances.items():
-            print("IP: {}".format(ip))
-            print("ROTAS: {}".format(dist))
+           # print("IP: {}".format(ip))
+            #print("ROTAS: {}".format(dist))
+
+            if ip not in routerTable:
+
+                routerTable[ip] = []
+                
+                for route in dist:
+                    dist = int(route[0]) + int(neighborDistance)
+                    routerTable[ip].append([str(dist), nextHop, ttl]) 
+            
+            else:
+                oldRoutes = routerTable[ip]
+
+                # Somente uma rota chegou
+                if len(dist) == 1:
+                    newDist = dist[0][0]
+
+                    print("ROTAS ANTIGAS: {}".format(oldRoutes))
+                    for route in oldRoutes:
+                        oldDistance = int(oldRoutes[0])
+                        print(oldDistance)
+
 
     def receivedTrace(self, data):
 
@@ -217,27 +251,27 @@ class Router():
 
     def sendUpdate(self):
         
-        while True:
-            # Sleep thread until "period", send update after
-            time.sleep(self.period)
-         
-            # No neighbors
-            if not neighborsTable:
-                continue
+        #while True:
+        # Sleep thread until "period", send update after
+        #time.sleep(self.period)
+        
+        # No neighbors
+        #if not neighborsTable:
+        #    continue
+        
+        # Loop through all neighbors
+        for ip in neighborsTable:
+
+            distanceTable = self.buildDistanceTable(ip)
             
-            # Loop through all neighbors
-            for ip in neighborsTable:
+            # Split Horizon
+            # Remove the route that goes to the neighbor of the message to the neighbor
+            
+            neighbor = self.initNeighborSocket()
 
-                distanceTable = self.buildDistanceTable(ip)
-               
-                # Split Horizon
-                # Remove the route that goes to the neighbor of the message to the neighbor
-                
-                neighbor = self.initNeighborSocket()
-
-                updateMessage = self.createMessage("update", ip, distanceTable) 
-                
-                neighbor.sendto(updateMessage.encode('UTF-8'), (ip, PORT))
+            updateMessage = self.createMessage("update", ip, distanceTable) 
+            print(updateMessage)
+            neighbor.sendto(updateMessage.encode('UTF-8'), (ip, PORT))
                 
     def sendTrace(self, dest):
 
@@ -387,8 +421,8 @@ if __name__ == '__main__':
     # Initialize Threads
     inputThread   = threading.Thread(target = router.handleUserInput, args = ())
     
-    updateThread  = threading.Thread(target = router.sendUpdate, args = ())
-    updateThread.daemon = True
+    #updateThread  = threading.Thread(target = router.sendUpdate, args = ())
+    #updateThread.daemon = True
     receiveThread = threading.Thread(target = router.receive, args = ())
     receiveThread.daemon = True
     #deleteThread  = threading.Thread(target = router.deleteRoutes, args = (period,))
@@ -396,9 +430,10 @@ if __name__ == '__main__':
 
     try:
         inputThread.start()
-        updateThread.start()
+        #updateThread.start()
         receiveThread.start()
         #deleteThread.start()
 
     except KeyboardInterrupt:
-        updateThread.join()
+        print("Acabou")
+        #updateThread.join()
