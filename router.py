@@ -28,10 +28,9 @@ routerTable = {}
 
 lock = threading.Lock()
 
-# Helper function that simulates js setInterval
-
 
 def set_interval(func, sec):
+    # Helper function that simulates js setInterval
     def func_wrapper():
         set_interval(func, sec)
         func()
@@ -41,7 +40,6 @@ def set_interval(func, sec):
 
 
 class Router():
-
     def __init__(self, host, port, period):
         self.host = host
         self.port = port
@@ -103,7 +101,7 @@ class Router():
             neighborsTable[ip] = distance
 
         if ip not in routerTable:
-            routerTable[ip] = [[distance, ip, (4 * self.period)]]
+            routerTable[ip] = [[distance, ip, time.time()]]
 
     # Create JSON message to send
     def createMessage(self, messageType, destination, data):
@@ -264,7 +262,6 @@ class Router():
 
             # Split Horizon
             # Remove the route that goes to the neighbor of the message to the neighbor
-
             neighbor = self.initNeighborSocket()
 
             updateMessage = self.createMessage("update", ip, distanceTable)
@@ -318,26 +315,16 @@ class Router():
         neighbor.sendto(dataMessage.encode('UTF-8'), (nextHop, PORT))
 
     def deleteRoutes(self):
-        # Keep cheking the router list looking for routers that passed 4 * period without atualization
-        # If the time withou update pass 4*pi remove route from table.
-        while True:
-            time.sleep(self.period)
-            lock.acquire()
-            # Loop through router list
-            for ip, routes in routerTable.items():
-
+        # Loop through router list
+        for ip, routes in routerTable.copy().items():
                 # check for more than 1 route
-                if len(routes) > 1:
-                    for index in range(len(routes)):
-                        routes[index][2] -= 1
-
-                        if routes[index][2] <= 0:
-                            routes.pop(index)
-                else:
-                    routes[0][2] -= 1
-                    if routes[0][2] <= 0:
-                        routerTable.pop(ip)
-            lock.release()
+            if len(routes) > 1:
+                for index in range(len(routes)):
+                    if time.time() - routes[index][2] >= ttl:
+                        routes.pop(index)
+            else:
+                if time.time() - routes[0][2] >= ttl:
+                    routerTable.pop(ip)
 
     # Build disntance table to send across the network
     def buildDistanceTable(self, destination):
@@ -409,13 +396,13 @@ if __name__ == '__main__':
 
     # Initialize Threads
     inputThread = threading.Thread(target=router.handleUserInput, args=())
-    set_interval(router.sendUpdate, ttl)
-    #updateThread  = threading.Thread(target = router.sendUpdate, args = ())
-    #updateThread.daemon = True
+
+    # set_interval executes func after x sec
+    set_interval(router.sendUpdate, period)
+    set_interval(router.deleteRoutes, period)
+
     receiveThread = threading.Thread(target=router.receive, args=())
     receiveThread.daemon = True
-    #deleteThread  = threading.Thread(target = router.deleteRoutes, args = (period,))
-    #deleteThread.daemon = True
 
     try:
         inputThread.start()
