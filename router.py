@@ -68,6 +68,8 @@ class Router():
         # line[0] = command
         # line[1] = ip
         # line[2] = distance
+        if not line:
+            return
         if line[0] == "q" or line[0] == "Q":
             exit()
 
