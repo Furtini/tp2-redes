@@ -281,19 +281,16 @@ class Router():
         neighbor = self.initNeighborSocket()
 
         # Check if destination is neighbor
-        if dest in neighborsTable:
-            nextHop = dest
-        else:
-            destRoutes = routerTable[dest]
+        destRoutes = routerTable[dest]
 
-            # Check for the number of routes
-            # If more then 1, check for distances values
-            if len(destRoutes) > 1:
-                # Get next hop through load balance algorithm
-                nextHop = self.loadBalance(destRoutes)
-            # Ip is not on router table
-            else:
-                nextHop = routerTable[dest][0][1]
+        # Check for the number of routes
+        # If more then 1, check for distances values
+        if len(destRoutes) > 1:
+            # Get next hop through load balance algorithm
+            nextHop = self.loadBalance(destRoutes)
+        # Ip is not on router table
+        else:
+            nextHop = routerTable[dest][0][1]
 
         hops = [self.host]
 
@@ -303,22 +300,18 @@ class Router():
     def sendData(self, hops, dest):
         neighbor = self.initNeighborSocket()
 
-        if dest in neighborsTable:
-            nextHop = dest
+        # Get the list of routes to destination
+        destRoutes = routerTable[dest]
 
+        # Check for the number of routes
+        # If more then 1, check for distances values
+        if len(destRoutes) > 1:
+            # Get next hop through load balance algorithm
+            nextHop = self.loadBalance(destRoutes)
+
+        # If only one route, send to id
         else:
-            # Get the list of routes to destination
-            destRoutes = routerTable[dest]
-
-            # Check for the number of routes
-            # If more then 1, check for distances values
-            if len(destRoutes) > 1:
-                # Get next hop through load balance algorithm
-                nextHop = self.loadBalance(destRoutes)
-
-            # If only one route, send to id
-            else:
-                nextHop = routerTable[dest][0][1]
+            nextHop = routerTable[dest][0][1]
 
         dataMessage = self.createMessage("data", dest, hops)
         neighbor.sendto(dataMessage.encode('UTF-8'), (nextHop, PORT))
