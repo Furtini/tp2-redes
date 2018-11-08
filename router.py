@@ -182,6 +182,7 @@ class Router():
 
                     for oldRoute in routerTable[ip]:
                         if oldRoute[1] == sourceIP:
+                            oldRoute[2] = time.time()
                             break
                         elif oldRoute[1] != sourceIP:
                             if newDist <= int(oldRoute[0]):
@@ -339,7 +340,7 @@ class Router():
                 if time.time() - route[2] >= ttl:
                     routes.remove(route)
         if len(routerTable[ip]) == 0:
-            routerTable.pop(ip, None)
+            routerTable.pop(ip)
 
     # Build disntance table to send across the network
 
@@ -358,7 +359,7 @@ class Router():
                         else:
                             distanceTable[ip].append(route)
 
-        # distanceTable[self.host] = "0"
+        distanceTable[self.host] = "0"
 
         return distanceTable
 
