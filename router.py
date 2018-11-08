@@ -71,6 +71,7 @@ class Router():
         # line[2] = distance
         if not line:
             return
+
         if line[0] == "q" or line[0] == "Q":
             exit()
 
@@ -276,7 +277,7 @@ class Router():
 
         # print("Enviando Update")
         # Loop through all neighbors
-        for ip in neighborsTable:
+        for ip in neighborsTable.copy():
             distanceTable = self.buildDistanceTable(ip)
 
             # Split Horizon
@@ -339,8 +340,9 @@ class Router():
             for route in routes:
                 if time.time() - route[2] >= ttl:
                     routes.remove(route)
-        if len(routerTable[ip]) == 0:
-            routerTable.pop(ip)
+            if not routerTable[ip]:
+                neighborsTable.pop(ip, None)
+                routerTable.pop(ip, None)
 
     # Build disntance table to send across the network
 
@@ -360,7 +362,6 @@ class Router():
                             distanceTable[ip].append(route)
 
         distanceTable[self.host] = "0"
-
         return distanceTable
 
     def loadBalance(self, destRoutes):
@@ -431,6 +432,5 @@ if __name__ == '__main__':
     try:
         inputThread.start()
         receiveThread.start()
-        # deleteThread.start()
     except KeyboardInterrupt:
         print("Acabou")
