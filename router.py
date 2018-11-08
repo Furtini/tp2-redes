@@ -2,6 +2,7 @@
 #  TP2 - DCCRIP
 #
 #  Lucas Furtini Veado - 2013007609
+#  Caio Augusto Ferreira Godoy -
 
 import sys
 import socket
@@ -10,7 +11,6 @@ import json
 import time
 import argparse
 import threading
-import itertools
 from random import randint
 
 PORT = 55151
@@ -107,16 +107,14 @@ class Router():
             routerTable[ip] = [[distance, ip, time.time()]]
 
     def handleDelCommand(self, ip):
-
         neighborsTable.pop(ip)
 
-        for ip, dist in routerTable.items():
+        for ip, dist in routerTable.copy().items():
             if dist[1] == ip:
                 routerTable[ip].remove(dist)
-        
 
-    # Create JSON message to send
     def createMessage(self, messageType, destination, data):
+        # Create JSON message to send
         message = {}
         message["type"] = messageType
         message["source"] = self.host
@@ -143,7 +141,6 @@ class Router():
             messageType = data["type"]
 
             lock.acquire()
-
             # Update Message
             if messageType == "update":
                 self.receivedUpdate(data)
@@ -164,11 +161,6 @@ class Router():
 
         newDistances = data["distances"]
 
-        #print()
-        #print("--- UPDATE RECEBIDO ---")
-        #print()
-        #print(newDistances)
-        #print()
         if sourceIP not in neighborsTable:
             return
 
@@ -178,55 +170,33 @@ class Router():
         # Loop through list of distances received
         # Checking if each IP are on the router table
         for ip, dist in newDistances.items():
-            #print("IP recebido: {} e suas rotas: {}".format(ip, dist))
-            #print("# rotas recebidas: {}".format(len(dist)))
-
             if ip not in routerTable:
-                #print("IP: {} - NAO ESTA NA TABELA.".format(ip))
                 routerTable[ip] = []
-
                 for route in dist:
-                   
                     newDist = int(route[0]) + neighborDistance
-                    routerTable[ip].append([str(newDist), nextHop, time.time()])
-            
+                    routerTable[ip].append(
+                        [str(newDist), nextHop, time.time()])
             else:
-                #print("IP {} ja na tabela".format(ip))
-                #print("Suas rotas conhecidas: {}".format(routerTable[ip]))
-
                 for newRoute in dist:
-                
                     newDist = int(newRoute[0]) + neighborDistance
 
                     for oldRoute in routerTable[ip]:
-                        
-                        if oldRoute[1] == sourceIP: break
-                        
+                        if oldRoute[1] == sourceIP:
+                            break
                         elif oldRoute[1] != sourceIP:
-                            #print("MESMO HOP {} -- Verifico distancia e atualizo".format(oldRoute[1]))
-
                             if newDist <= int(oldRoute[0]):
-                                #print("DISTANCIA MENOR - Atualizo valor")
-                                
                                 novo = [[str(newDist), sourceIP, time.time()]]
                                 routerTable[ip] = novo + routerTable[ip]
-                                #print("NOVA ROTA: {}".format(routerTable[ip]))
-
                             else:
-                                #if oldRoute[1] != sourceIP:
-                                #print("ADICIONO NO FINAL")
+                                # if oldRoute[1] != sourceIP:
                                 novo = [[str(newDist), sourceIP, time.time()]]
                                 routerTable[ip] = routerTable[ip] + novo
-  
-            #print("-----")
-            
         self.fixRoutes()
-        
-    # Fix routes on router table, removing duplicates and ordering by small distance
+
     def fixRoutes(self):
-            
+        # Fix routes on router table, removing duplicates and ordering by small distance
         for ip, dist in routerTable.items():
-            
+
             seen = set()
             # Remove duplicates on router based on nextHop value
             dist = [x for x in dist if x[1] not in seen and not seen.add(x[1])]
@@ -299,27 +269,22 @@ class Router():
                 nextIP.sendto(data.encode('UTF-8'), (nextHop, PORT))
 
     def sendUpdate(self):
-        
-        while True:
-        # Sleep thread until "period", send update after
-            time.sleep(self.period)
-        
         # No neighbors
-            if not neighborsTable:
-                continue
-            
-            #print("Enviando Update")
-            # Loop through all neighbors
-            for ip in neighborsTable:
-                distanceTable = self.buildDistanceTable(ip)
+        if not neighborsTable:
+            return
 
-                # Split Horizon
-                # Remove the route that goes to the neighbor of the message to the neighbor
-                neighbor = self.initNeighborSocket()
+        # print("Enviando Update")
+        # Loop through all neighbors
+        for ip in neighborsTable:
+            distanceTable = self.buildDistanceTable(ip)
 
-                updateMessage = self.createMessage("update", ip, distanceTable)
-                #print(updateMessage)
-                neighbor.sendto(updateMessage.encode('UTF-8'), (ip, PORT))
+            # Split Horizon
+            # Remove the route that goes to the neighbor of the message to the neighbor
+            neighbor = self.initNeighborSocket()
+
+            updateMessage = self.createMessage("update", ip, distanceTable)
+            # print(updateMessage)
+            neighbor.sendto(updateMessage.encode('UTF-8'), (ip, PORT))
 
     def sendTrace(self, dest):
         neighbor = self.initNeighborSocket()
@@ -370,16 +335,14 @@ class Router():
     def deleteRoutes(self):
         # Loop through router list
         for ip, routes in routerTable.copy().items():
-                # check for more than 1 route
-            if len(routes) > 1:
-                for index in range(len(routes)):
-                    if time.time() - routes[index][2] >= ttl:
-                        routes.pop(index)
-            else:
-                if time.time() - routes[0][2] >= ttl:
-                    routerTable.pop(ip)
+            for route in routes:
+                if time.time() - route[2] >= ttl:
+                    routes.remove(route)
+        if len(routerTable[ip]) == 0:
+            routerTable.pop(ip, None)
 
     # Build disntance table to send across the network
+
     def buildDistanceTable(self, destination):
         distanceTable = {}
 
@@ -387,7 +350,7 @@ class Router():
             for ip, routes in routerTable.items():
                 if ip == destination:
                     continue
-                else:                
+                else:
                     distanceTable[ip] = []
                     for route in routes:
                         if route[1] == destination:
@@ -395,7 +358,7 @@ class Router():
                         else:
                             distanceTable[ip].append(route)
 
-        #distanceTable[self.host] = "0"
+        # distanceTable[self.host] = "0"
 
         return distanceTable
 
@@ -457,20 +420,16 @@ if __name__ == '__main__':
     # Initialize Threads
     inputThread = threading.Thread(target=router.handleUserInput, args=())
 
-    updateThread = threading.Thread(target=router.sendUpdate, args=())
-    updateThread.daemon = True
-    
-    #set_interval(router.deleteRoutes, period)
+    set_interval(router.sendUpdate, period)
+
+    set_interval(router.deleteRoutes, period)
 
     receiveThread = threading.Thread(target=router.receive, args=())
     receiveThread.daemon = True
 
     try:
         inputThread.start()
-        updateThread.start()
         receiveThread.start()
         # deleteThread.start()
-
     except KeyboardInterrupt:
         print("Acabou")
-        updateThread.join()
