@@ -29,17 +29,6 @@ routerTable = {}
 
 lock = threading.Lock()
 
-
-def set_interval(func, sec):
-    # Helper function that simulates js setInterval
-    def func_wrapper():
-        set_interval(func, sec)
-        func()
-    t = threading.Timer(sec, func_wrapper)
-    t.start()
-    return t
-
-
 class Router():
     def __init__(self, host, port, period):
         self.host = host
@@ -345,7 +334,6 @@ class Router():
                 routerTable.pop(ip, None)
 
     # Build disntance table to send across the network
-
     def buildDistanceTable(self, destination):
         distanceTable = {}
 
@@ -365,14 +353,24 @@ class Router():
         return distanceTable
 
     def loadBalance(self, destRoutes):
+        
+        repeatedRoutes = []
+
+        distance = int(destRoutes[0][0])
+        repeatedRoutes.append(destRoutes[0][1])
+
+        for route in destRoutes:
+            if int(route[0]) == distance:
+                repeatedRoutes.append(route[1]) 
+        
         # Get the number of repeated routes for the smaller route
-        numberReapetedRoutes = len(destRoutes)
+        numberReapetedRoutes = len(repeatedRoutes)
 
         # int that represents the ID of the router to send
         routerToSend = randint(0, numberReapetedRoutes-1)
 
         # Get the ip to the next route
-        routerToSendIP = destRoutes[routerToSend][1]
+        routerToSendIP = repeatedRoutes[routerToSend]
 
         return routerToSendIP
 
@@ -395,6 +393,14 @@ def defineParameters():
 
     return parser.parse_args()
 
+# Helper function that simulates js setInterval
+def set_interval(func, sec):
+    def func_wrapper():
+        set_interval(func, sec)
+        func()
+    t = threading.Timer(sec, func_wrapper)
+    t.start()
+    return t
 
 # Main execution
 if __name__ == '__main__':
@@ -422,15 +428,13 @@ if __name__ == '__main__':
     # Initialize Threads
     inputThread = threading.Thread(target=router.handleUserInput, args=())
 
-    set_interval(router.sendUpdate, period)
+    updateThread = set_interval(router.sendUpdate, period)
 
-    set_interval(router.deleteRoutes, period)
+    deleteThread = set_interval(router.deleteRoutes, period)
 
     receiveThread = threading.Thread(target=router.receive, args=())
     receiveThread.daemon = True
 
-    try:
-        inputThread.start()
-        receiveThread.start()
-    except KeyboardInterrupt:
-        print("Acabou")
+    inputThread.start()
+    receiveThread.start()
+    
